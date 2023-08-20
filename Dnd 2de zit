@@ -1,0 +1,287 @@
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <unistd.h>
+
+enum RequiredComponents { VERBAL, SOMATIC, MATERIAL };
+
+enum type {
+    SPHERE,
+    CORE,
+    CYLINDER,
+    LINE,
+    CUBE,
+};
+
+enum bool { TRUE, FALSE };// boollean type meegegeven zodat deze gekend is
+
+struct info {
+    char *index;
+    char *name;
+    char *url;
+};
+
+struct Spell {
+    struct info data;
+    char *desc;
+    char *higher_level;
+    char *range;
+    enum RequiredComponents components;
+    char material[64];
+
+    struct {
+        int area_of_effect_size;
+        enum type area_of_effect_type;
+    } area_of_effect;
+
+    enum bool ritual;
+    char duration[16];
+    enum bool concentration;
+    char casting_time[16];
+    int level;
+    char attack_type[16];
+
+    struct damage {
+        struct {
+            int level;
+            struct info damage_type;
+        } damage_at_character_level;
+
+        struct {
+            int level;
+            struct info damage_type;
+        } damage_at_slot_level;
+    } damage;
+
+    struct info school;
+    struct info classes;
+    struct info subclasses;
+};
+
+struct node {
+    struct Spell spell;
+    struct node *next;
+};
+
+struct node *circle(struct node *head, struct Spell insert);
+struct node *loop(struct node *head);
+struct node *frontCard(struct node *head);
+void printSpell(struct Spell *spell);
+
+struct Spell parseFile(char *FileName);
+void historyFile(char *file, char *text);
+
+int Slots[5];
+int Level;
+char *Files[20];
+char *Log = NULL;
+
+struct Spell Spells[20];
+
+int main(int argc, char *argv[]) {
+
+    int argvCounter = 0;
+    int counter = 0;
+    struct node *head = NULL;
+
+    printf("argc = %d\n", argc);
+
+    for (int j = 0; j < argc; j++) {
+        printf("argv[%i] = %s\n", j, argv[j]);
+    }
+
+    for (int i = 0; i < argc - 1; i++) {
+        printf("i = %d\n", i);
+
+        if (strcmp("-s", argv[i]) == 0) {
+            printf("Slots worden ingeladen\n");
+            while (strcmp("-l", argv[counter]) != 0) {
+                Slots[counter] = atoi(argv[counter]);
+                counter++;
+            }
+        } else if (strcmp("-l", argv[i]) == 0) {
+            printf("level wordt ingeladen\n");
+            Level = atoi(argv[i + 1]);
+            counter = i + 2;
+
+            while (strcmp("-h", argv[counter]) != 0) {
+                printf("files worden ingeladen\n");
+                Files[counter] = argv[counter];
+                Spells[counter] = parseFile(Files[counter]);
+                head = circle(head, Spells[counter]);
+                printf("Name = %s\n", Spells[counter].data.name);
+                counter++;
+            }
+        } else if (strcmp("-h", argv[i]) == 0) {
+            printf("Log wordt ingeladen\n");
+            Log = argv[i + 1];
+        } else {
+            printf("Else");
+            continue;
+        }
+        printf("Slots zijn ingeladen\n");
+    }
+
+    printf("Kaarten zijn klaar\n");
+    printf("Er zijn verschillende opties die u kan uitvoeren:\n");
+    printf("Options: 'loop' -> Bovenste kaart gaat naar de onderkant van de stapel\n");
+    printf("         'cast' -> De kaart zal gecast worden en uit de stapel verwijderd worden\n");
+    printf("         'stop' -> Het programma stopt onmiddellijk\n");
+
+    int fileCounter = 0;
+
+    if (Log != NULL) {
+        argvCounter++;
+        Log = argv[argvCounter];
+    }
+
+    for (int i = 0; i <= fileCounter; i++) {
+        printf("Het geladen spell = %s\n", Files[i]);
+        Spells[i] = parseFile(Files[i]);
+        printf("Spells[%d] = %s\n", i, Files[i]);
+        head = circle(head, Spells[i]);
+    }
+
+    char option[5];
+    char message[255];
+    scanf("%s", option);
+
+    while (strcmp("stop", option) != 0) {
+        system("clear");
+
+        while (strcmp("stop", option) == 0) {
+            if (strcmp("loop", option) == 0) {
+                printf("Looking at another card\n");
+                head = loop(head);
+                sprintf(message, "Player is looking in his cards\n");
+                historyFile(Log, message);
+            } else if (strcmp("cast", option) == 0) {
+                printf("Player casted %s", head->spell.data.name);
+                sprintf(message, "Player casted %s\n", head->spell.data.name);
+                head = frontCard(head);
+                historyFile(Log, message);
+            } else {
+                printf("Dat is geen optie! De opties zijn 'loop', 'cast' and 'stop'\n");
+            }
+
+            printSpell(&head->spell);
+
+            printf("Dat is geen optie! De opties zijn 'loop' en 'cast'\n");
+        }
+
+        printf("Options: 'loop' -> Bovenste kaart gaat naar de onderkant van de stapel\n");
+        printf("         'cast' -> De kaart zal gecast worden en uit de stapel verwijderd worden\n");
+        printf("         'stop' -> Het programma stopt onmiddellijk\n");
+        scanf("%s", option);
+    }
+
+    return 0;
+}
+
+struct Spell parseFile(char *FileName ) {
+    printf("Uitgelezen file = %s\n", FileName );
+    FILE *file = fopen(FileName, "r");// open file reading
+    if (file == NULL) { // kijken of file opening succesvol is
+        perror("Failed opening file!!");
+        exit(1);
+    }
+
+    struct Spell newspell;
+    struct info *Fill = NULL;
+    char buffer[1024];
+    char *parsing = NULL;
+    int counter = 1;
+
+    while (fgets(buffer, sizeof(buffer), file) != NULL) {
+        parsing = buffer;
+        char *token = strsep(&parsing, ":");
+
+        while (token) {
+            printf("%2d %s", counter++, token);
+            token = strsep(&parsing, ":");// vinden van de volgende token 
+            char *cleanUp = strsep(&token, ":");//uithalen van sting met een komma 
+            char *cleanString = strsep(&cleanUp, ",");//zuivere string zonder een komma 
+
+
+            if (token != NULL) {// invullen van de struct 
+                if (strcmp("name", token) == 0) {//bapelan wat er ingevuld moet worden 
+                    if (newspell.data.name == NULL) {
+                        newspell.data.name = strdup(cleanString);//vullen de struct met het juist bepaalde deel
+                    }
+                } else if (strcmp("index", token) == 0) {
+                    if (Fill == NULL) {
+                        newspell.data.index = strdup(cleanString);
+                    } else {
+                        strncpy(Fill->index, cleanString, sizeof(Fill->index) - 1);
+                        Fill->index[sizeof(Fill->index) - 1] = '\0';
+                    }
+                } else if (strcmp("url", token) == 0) {
+                    newspell.data.url = strdup(cleanString);
+                } else if (strcmp("desc", token) == 0) {
+                    newspell.desc = strdup(cleanString);
+                } else if (strcmp("school", token) == 0) {
+                    Fill = &newspell.school;
+                }
+            } else {
+                continue;
+            }
+        }
+    }
+    fclose(file);
+    return newspell;//returnen van de gevulde struct 
+}
+
+void historyFile(char *file, char *text) {
+    FILE *f = fopen(file, "a");// schrijven naar meegegeven file zonder dat andere data zal overschreven worden
+    if (f == NULL) {
+        perror("Failed opening history file!!");
+        exit(1);
+    }
+    fprintf(f, "%s", text);//bericht schrijven naar de meegegeven file
+    fclose(f);// OS laten weten dat we niet langer toegang tot de file nodig hebben 
+}
+
+struct node *circle(struct node *head, struct Spell insert) {
+    if (head == NULL) {
+        head = (struct node *)calloc(1, sizeof(struct node));
+        head->spell = insert;
+        head->next = head;
+    } else {
+        struct node *pointer = (struct node *)calloc(1, sizeof(struct node));
+        pointer->spell = insert;
+        pointer->next = head->next;
+        head->next = pointer;
+    }
+    printSpell(&head->spell);
+    return head;
+}
+
+struct node *loop(struct node *head) {
+    if (head != NULL) {
+        head = head->next;
+    }
+    printSpell(&head->spell);
+    return head;
+}
+
+struct node *frontCard(struct node *head) {
+    if (head != NULL) {
+        struct node *pointer = head->next;
+        head->next = pointer->next;
+        if (pointer == head) {
+            head = NULL;
+        }
+        free(pointer);
+    }
+    printSpell(&head->spell);
+    return head;
+}
+
+void printSpell(struct Spell *spell) {
+    printf("Index: %s\n", spell->data.index);
+    printf("Name: %s\n", spell->data.name);
+    printf("URL: %s\n", spell->data.url);
+    printf("Description: %s\n", spell->desc);
+}
